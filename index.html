@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cricket Scoring App (Auth + Realtime)</title>
+  <title>Cricket Scoring App (Realtime + Auth)</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -204,7 +204,7 @@
       currentMatch = matchId;
 
       if (unsubscribe) unsubscribe(); // remove previous listener
-      const matchRef = doc(db, "matches", matchId);
+      const matchRef = doc(db, "cricket-live-score", matchId);
 
       const snapshot = await getDoc(matchRef);
       if (!snapshot.exists()) {
@@ -241,7 +241,7 @@
 
     async function saveScore() {
       if (!currentMatch) return;
-      const matchRef = doc(db, "matches", currentMatch);
+      const matchRef = doc(db, "cricket-live-score", currentMatch);
       await setDoc(matchRef, { runs, wickets, balls }, { merge: true });
     }
 
