@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Cricket Live Score (Node.js)</title>
+  <title>Cricket Live Score (Realtime)</title>
   <style>
     body { font-family: Arial; background: #e8f5e9; text-align: center; }
     input, button { margin: 5px; padding: 8px; }
@@ -36,7 +36,9 @@
     </div>
   </div>
 
+  <script src="/socket.io/socket.io.js"></script>
   <script>
+    const socket = io();
     let matchId, teamA, teamB;
     let runs = 0, wickets = 0, balls = 0;
 
@@ -52,7 +54,8 @@
       document.getElementById("matchTitle").innerText = `Match: ${matchId}`;
       document.getElementById("teamNames").innerText = `${teamA} vs ${teamB}`;
 
-      // Try to load match from backend
+      socket.emit("subscribe", matchId);
+
       const res = await fetch(`/api/match/${matchId}`);
       if (res.ok) {
         const data = await res.json();
@@ -60,11 +63,20 @@
         wickets = data.wickets || 0;
         balls = data.balls || 0;
       } else {
-        // Create match
         await saveMatch();
       }
       updateDisplay();
     }
+
+    socket.on("scoreUpdate", (data) => {
+      if (data.id === matchId) {
+        runs = data.runs;
+        wickets = data.wickets;
+        balls = data.balls;
+        document.getElementById("teamNames").innerText = `${data.teamA} vs ${data.teamB}`;
+        updateDisplay(false);
+      }
+    });
 
     async function saveMatch() {
       await fetch(`/api/match/${matchId}`, {
@@ -74,10 +86,10 @@
       });
     }
 
-    function updateDisplay() {
+    function updateDisplay(save = true) {
       document.getElementById("scoreDisplay").innerText = `${runs} / ${wickets}`;
       document.getElementById("overDisplay").innerText = `Overs: ${Math.floor(balls / 6)}.${balls % 6}`;
-      saveMatch();
+      if (save) saveMatch();
     }
 
     function addRun(n) { runs += n; balls++; updateDisplay(); }
