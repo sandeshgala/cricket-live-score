@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cricket Scoring App (Auth + Realtime)</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #e8f5e9;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      color: #2e7d32;
+    }
+
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      width: 340px;
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+
+    button {
+      background: #4caf50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      padding: 10px 15px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+
+    button:hover { background: #388e3c; }
+    .reset { background: #d32f2f; }
+    .reset:hover { background: #b71c1c; }
+
+    input {
+      padding: 8px;
+      margin: 5px 0;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      width: 90%;
+      font-size: 16px;
+    }
+
+    #loginForm, #matchSetup, #scoreboard {
+      display: none;
+    }
+
+    .score {
+      font-size: 32px;
+      color: #1b5e20;
+      font-weight: bold;
+    }
+
+    .details {
+      color: #555;
+      font-size: 18px;
+      margin-top: 10px;
+    }
+
+  </style>
+</head>
+<body>
+
+  <h1>🏏 Cricket Scoring App</h1>
+
+  <!-- Login Form -->
+  <div id="loginForm" class="container">
+    <h3>Sign In</h3>
+    <input type="email" id="email" placeholder="Email">
+    <input type="password" id="password" placeholder="Password">
+    <button onclick="login()">Login</button>
+    <button onclick="signup()">Sign Up</button>
+    <p>or</p>
+    <button onclick="anonymousLogin()">Continue as Guest</button>
+  </div>
+
+  <!-- Match Setup -->
+  <div id="matchSetup" class="container">
+    <h3>Match Setup</h3>
+    <input type="text" id="matchId" placeholder="Match name (e.g. INDvsAUS)">
+    <input type="text" id="teamA" placeholder="Team A name">
+    <input type="text" id="teamB" placeholder="Team B name">
+    <button onclick="loadMatch()">Start Match</button>
+    <button onclick="logout()">Logout</button>
+  </div>
+
+  <!-- Scoreboard -->
+  <div id="scoreboard" class="container">
+    <h2 id="matchTitle"></h2>
+    <div id="teamNames"></div>
+    <div class="score" id="scoreDisplay">0 / 0</div>
+    <div class="details" id="overDisplay">Overs: 0.0</div>
+
+    <div class="controls">
+      <button onclick="addRun(1)">1 Run</button>
+      <button onclick="addRun(2)">2 Runs</button>
+      <button onclick="addRun(3)">3 Runs</button>
+      <button onclick="addRun(4)">4 Runs</button>
+      <button onclick="addRun(6)">6 Runs</button>
+      <button onclick="addWicket()">Wicket</button>
+      <button onclick="addBall()">Next Ball</button>
+      <button class="reset" onclick="resetScore()">Reset</button>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+    import {
+      getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
+      signInAnonymously, onAuthStateChanged, signOut
+    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js";
+    import {
+      getFirestore, doc, getDoc, setDoc, onSnapshot
+    } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+
+    // 🔥 Replace with your Firebase configuration
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let runs = 0, wickets = 0, balls = 0;
+    let currentMatch = null;
+    let unsubscribe = null;
+
+    // 🧠 Authentication handlers
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        document.getElementById("loginForm").style.display = "none";
+        document.getElementById("matchSetup").style.display = "block";
+      } else {
+        document.getElementById("loginForm").style.display = "block";
+        document.getElementById("matchSetup").style.display = "none";
+        document.getElementById("scoreboard").style.display = "none";
+      }
+    });
+
+    window.login = async function() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+
+    window.signup = async function() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } catch (e) {
+        alert(e.message);
+      }
+    };
+
+    window.anonymousLogin = async function() {
+      await signInAnonymously(auth);
+    };
+
+    window.logout = async function() {
+      await signOut(auth);
+    };
+
+    // 🏏 Match setup and scoring
+    window.loadMatch = async function() {
+      const matchId = document.getElementById("matchId").value.trim();
+      const teamA = document.getElementById("teamA").value.trim();
+      const teamB = document.getElementById("teamB").value.trim();
+      if (!matchId || !teamA || !teamB) {
+        alert("Enter match name and both team names!");
+        return;
+      }
+
+      currentMatch = matchId;
+
+      if (unsubscribe) unsubscribe(); // remove previous listener
+      const matchRef = doc(db, "matches", matchId);
+
+      const snapshot = await getDoc(matchRef);
+      if (!snapshot.exists()) {
+        await setDoc(matchRef, { runs: 0, wickets: 0, balls: 0, teamA, teamB });
+      } else {
+        const data = snapshot.data();
+        runs = data.runs || 0;
+        wickets = data.wickets || 0;
+        balls = data.balls || 0;
+      }
+
+      document.getElementById("matchSetup").style.display = "none";
+      document.getElementById("scoreboard").style.display = "block";
+      document.getElementById("matchTitle").innerText = `Match: ${matchId}`;
+      document.getElementById("teamNames").innerText = `${teamA} vs ${teamB}`;
+      updateDisplay();
+
+      unsubscribe = onSnapshot(matchRef, (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          runs = data.runs;
+          wickets = data.wickets;
+          balls = data.balls;
+          document.getElementById("teamNames").innerText = `${data.teamA} vs ${data.teamB}`;
+          updateDisplay();
+        }
+      });
+    };
+
+    function updateDisplay() {
+      document.getElementById("scoreDisplay").innerText = `${runs} / ${wickets}`;
+      document.getElementById("overDisplay").innerText = `Overs: ${Math.floor(balls/6)}.${balls%6}`;
+    }
+
+    async function saveScore() {
+      if (!currentMatch) return;
+      const matchRef = doc(db, "matches", currentMatch);
+      await setDoc(matchRef, { runs, wickets, balls }, { merge: true });
+    }
+
+    window.addRun = function(num) {
+      runs += num;
+      balls++;
+      saveScore();
+      updateDisplay();
+    };
+
+    window.addWicket = function() {
+      wickets++;
+      balls++;
+      saveScore();
+      updateDisplay();
+    };
+
+    window.addBall = function() {
+      balls++;
+      saveScore();
+      updateDisplay();
+    };
+
+    window.resetScore = function() {
+      runs = 0; wickets = 0; balls = 0;
+      saveScore();
+      updateDisplay();
+    };
+  </script>
+</body>
+</html>
